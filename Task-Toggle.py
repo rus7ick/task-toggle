@@ -1,10 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
+from tkinter import ttk, messagebox, filedialog, simpledialog, Toplevel
+from tkcalendar import DateEntry
 from datetime import datetime, date
 import pandas as pd
 import os
 import json
-import tkinter.scrolledtext as scrolledtext
 
 class TaskTrackerApp:
     def __init__(self, root):
@@ -14,18 +14,17 @@ class TaskTrackerApp:
         self.tasks = []
         self.current_task = None
         self.start_time = None
-        self.filename = f"tasks_{date.today().strftime('%Y-%m')}.json"
+        self.filename = f"tasks_{date.today()}.json"
 
         self.setup_ui()
-        self.load_monthly_tasks()
-        self.auto_export_previous_month()
+        self.load_daily_tasks()
         self.update_timer()
 
     def setup_ui(self):
         frame = tk.Frame(self.root)
         frame.pack(pady=10)
 
-        tk.Label(frame, text="\u015eu an ne yapıyorsun?", font=("Arial", 12)).pack(side=tk.LEFT, padx=5)
+        tk.Label(frame, text="Şu an ne yapıyorsun?", font=("Arial", 12)).pack(side=tk.LEFT, padx=5)
         self.entry = tk.Entry(frame, font=("Arial", 14), width=40)
         self.entry.pack(side=tk.LEFT)
         self.entry.bind("<Return>", self.start_new_task)
@@ -47,7 +46,11 @@ class TaskTrackerApp:
         tk.Button(btn_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=1, padx=5)
         tk.Button(btn_frame, text="Sil", command=self.delete_task).grid(row=0, column=2, padx=5)
         tk.Button(btn_frame, text="Düzenle", command=self.edit_task).grid(row=0, column=3, padx=5)
-        tk.Button(btn_frame, text="Program Hakkında", command=self.show_about).grid(row=0, column=4, padx=5)
+
+        # Hakkında butonu sağ alt köşe
+        about_frame = tk.Frame(self.root)
+        about_frame.pack(anchor='se', padx=10, pady=10, side=tk.RIGHT)
+        tk.Button(about_frame, text="Hakkında", command=self.show_about).pack()
 
     def update_timer(self):
         if self.current_task and self.start_time:
@@ -86,7 +89,7 @@ class TaskTrackerApp:
         }
 
         self.tasks.append(task)
-        self.save_monthly_tasks()
+        self.save_daily_tasks()
 
         self.tree.insert("", "end", values=(task["Görev"], self.start_time.strftime("%H:%M:%S"), end_time.strftime("%H:%M:%S"), duration))
 
@@ -102,7 +105,7 @@ class TaskTrackerApp:
         index = self.tree.index(selected[0])
         self.tree.delete(selected[0])
         del self.tasks[index]
-        self.save_monthly_tasks()
+        self.save_daily_tasks()
 
     def edit_task(self):
         selected = self.tree.selection()
@@ -116,31 +119,44 @@ class TaskTrackerApp:
         if new_name:
             self.tasks[index]["Görev"] = new_name
             self.tree.item(selected[0], values=(new_name, self.tasks[index]["Başlangıç"][11:], self.tasks[index]["Bitiş"][11:], self.tasks[index]["Süre (dk)"]))
-            self.save_monthly_tasks()
+            self.save_daily_tasks()
 
     def export_to_excel(self):
-        month = simpledialog.askstring("Ay Seçimi", "Excel'e aktarılacak ayı girin (YYYY-MM):")
-        if not month:
-            return
-        json_file = f"tasks_{month}.json"
-        if not os.path.exists(json_file):
-            messagebox.showerror("Hata", f"{json_file} bulunamadı.")
-            return
+        top = Toplevel(self.root)
+        top.title("Tarih Seçimi")
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        tk.Label(top, text="Başlangıç Tarihi:").grid(row=0, column=0, padx=10, pady=5)
+        start_date = DateEntry(top, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        start_date.grid(row=0, column=1, padx=10)
 
-        df = pd.DataFrame(data)
-        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Dosyası", "*.xlsx")])
-        if file_path:
-            df.to_excel(file_path, index=False)
-            messagebox.showinfo("Başarılı", f"Excel dosyası kaydedildi:\n{file_path}")
+        tk.Label(top, text="Bitiş Tarihi:").grid(row=1, column=0, padx=10, pady=5)
+        end_date = DateEntry(top, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        end_date.grid(row=1, column=1, padx=10)
 
-    def save_monthly_tasks(self):
+        def export():
+            start = datetime.strptime(start_date.get(), "%Y-%m-%d")
+            end = datetime.strptime(end_date.get(), "%Y-%m-%d")
+
+            filtered_tasks = [task for task in self.tasks if start <= datetime.strptime(task["Başlangıç"], "%Y-%m-%d %H:%M:%S") <= end]
+
+            if not filtered_tasks:
+                messagebox.showinfo("Bilgi", "Seçilen tarih aralığında görev bulunamadı.")
+                return
+
+            df = pd.DataFrame(filtered_tasks)
+            file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Dosyası", "*.xlsx")])
+            if file_path:
+                df.to_excel(file_path, index=False)
+                messagebox.showinfo("Başarılı", f"Excel dosyası kaydedildi:\n{file_path}")
+            top.destroy()
+
+        tk.Button(top, text="Aktar", command=export).grid(row=2, column=0, columnspan=2, pady=10)
+
+    def save_daily_tasks(self):
         with open(self.filename, "w", encoding="utf-8") as f:
             json.dump(self.tasks, f, ensure_ascii=False, indent=2)
 
-    def load_monthly_tasks(self):
+    def load_daily_tasks(self):
         if os.path.exists(self.filename):
             with open(self.filename, "r", encoding="utf-8") as f:
                 self.tasks = json.load(f)
@@ -152,81 +168,24 @@ class TaskTrackerApp:
                     task["Süre (dk)"]
                 ))
 
-    def auto_export_previous_month(self):
-        today = date.today()
-        if today.day != 1:
-            return
-
-        previous_month = (today.replace(day=1) - pd.Timedelta(days=1)).strftime("%Y-%m")
-        json_file = f"tasks_{previous_month}.json"
-        excel_file = f"tasks_{previous_month}.xlsx"
-
-        if os.path.exists(json_file) and not os.path.exists(excel_file):
-            with open(json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            df = pd.DataFrame(data)
-            df.to_excel(excel_file, index=False)
-
     def show_about(self):
-        about_text = """
-GÖREV TAKİP PROGRAMI ÖZELLİKLERİ
-
-📌 GENEL
-- Kullanıcı dostu grafik arayüz (Tkinter)
-- Yerel veri kaydı (.json ve .xlsx)
-- İnternet bağlantısı gerekmez
-
-📝 GÖREV TAKİBİ
-- Görev başlatma ve süre takibi
-- Başlangıç, bitiş, toplam süre (dk)
-- Canlı süre güncellemesi
-
-🧳 GÖREV YÖNETİMİ
-- Silme ve düzenleme
-- Aylık listeleme ve tablo görünümü
-
-📁 VERİ SAKLAMA
-- Aylık dosyalama: tasks_YYYY-MM.json
-- Otomatik veri kaydı
-
-📄 EXCEL AKTARIMI
-- Kullanıcıdan ay seçimi (YYYY-MM)
-- Excel olarak dışa aktarım
-
-🔄 OTOMATİK EXCEL
-- Ayın ilk günü kontrolü
-- Önceki aya ait veriler otomatik .xlsx
-
-🌟 KULLANIM ALANLARI
-- Freelance iş takibi
-- Evden çalışma verimliliği
-- Akademik zaman yönetimi
-- Günlük üretkenlik analizi
-
-ℹ️ PROGRAM BİLGİSİ
-- Sürüm: 1.0.0
-- Geliştirici: rus7ick
-- Lisans: Açık Kaynak Lisansı
-- Son Güncelleme: Mayıs 2025
-
-📬 İLETİŞİM
-Herhangi bir geri bildirim, hata bildirimi veya öneri için:
-✉️ E-posta: rus7ick@gmail.com
-
-🤝 KATKIDA BULUN
-Proje açık kaynaklıdır. Geliştirmelere, önerilere ve katkılara açıktır.
-GitHub üzerinden katkıda bulunabilirsiniz:
-🔗 https://github.com/rus7ick/task-toggle
-        """
-
-        about_window = tk.Toplevel(self.root)
-        about_window.title("Hakkında")
-        about_window.geometry("540x560")
-
-        text_area = scrolledtext.ScrolledText(about_window, wrap=tk.WORD, font=("Arial", 11))
-        text_area.pack(fill=tk.BOTH, expand=True)
-        text_area.insert(tk.END, about_text)
-        text_area.config(state=tk.DISABLED)
+        about_text = (
+            "Görev Takip Uygulaması Özellikleri:\n\n"
+            "- Yeni görev başlatıp süre takibi yapabilirsiniz.\n"
+            "- Aktif görevleri durdurduğunuzda kayıt altına alınır.\n"
+            "- Kayıtlı görevleri liste halinde görebilir, silebilir veya düzenleyebilirsiniz.\n"
+            "- Görevleri seçilen tarih aralığına göre Excel dosyasına aktarabilirsiniz.\n"
+            "- Günlük olarak veriler JSON dosyasına kaydedilir.\n\n"
+            "Kullanım:\n"
+            "- Görev ismini yazın ve Enter tuşuna basın.\n"
+            "- 'Süreyi Durdur' butonuyla görevi bitirin.\n"
+            "- Kayıtlı görevler üzerinde değişiklik yapabilir ya da silebilirsiniz.\n"
+            "- Excel'e aktarmak için tarih seçimi yaparak dışa aktarabilirsiniz.\n\n"
+            "Geliştirici: rus7ick \n"
+            "GitHub: https://github.com/rus7ick/task-toggle \n"
+            "Sürüm: 1.0.0"
+        )
+        messagebox.showinfo("Hakkında", about_text)
 
 root = tk.Tk()
 app = TaskTrackerApp(root)
